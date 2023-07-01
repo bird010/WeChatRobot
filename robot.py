@@ -4,13 +4,12 @@ import logging
 import re
 import time
 import xml.etree.ElementTree as ET
+import json
 
 from wcferry import Wcf, WxMsg
 
 from configuration import Config
 from func_chatgpt import ChatGPT
-from func_chengyu import cy
-from func_news import News
 from job_mgmt import Job
 
 
@@ -27,7 +26,9 @@ class Robot(Job):
         self.chat = None
         chatgpt = self.config.CHATGPT
         if chatgpt:
-            self.chat = ChatGPT(chatgpt.get("key"), chatgpt.get("api"), chatgpt.get("proxy"), chatgpt.get("prompt"))
+            with open("E:\code\ChatGPT\key.json") as f:
+                KEY = json.load(f)
+            self.chat = ChatGPT(KEY["My Test Key"], chatgpt.get("api"), chatgpt.get("proxy"), chatgpt.get("prompt"))
 
     def toAt(self, msg: WxMsg) -> bool:
         """处理被 @ 消息
@@ -36,38 +37,11 @@ class Robot(Job):
         """
         return self.toChitchat(msg)
 
-    def toChengyu(self, msg: WxMsg) -> bool:
-        """
-        处理成语查询/接龙消息
-        :param msg: 微信消息结构
-        :return: 处理状态，`True` 成功，`False` 失败
-        """
-        status = False
-        texts = re.findall(r"^([#|?|？])(.*)$", msg.content)
-        # [('#', '天天向上')]
-        if texts:
-            flag = texts[0][0]
-            text = texts[0][1]
-            if flag == "#":  # 接龙
-                if cy.isChengyu(text):
-                    rsp = cy.getNext(text)
-                    if rsp:
-                        self.sendTextMsg(rsp, msg.roomid)
-                        status = True
-            elif flag in ["?", "？"]:  # 查词
-                if cy.isChengyu(text):
-                    rsp = cy.getMeaning(text)
-                    if rsp:
-                        self.sendTextMsg(rsp, msg.roomid)
-                        status = True
-
-        return status
-
     def toChitchat(self, msg: WxMsg) -> bool:
         """闲聊，接入 ChatGPT
         """
         if not self.chat:  # 没接 ChatGPT，固定回复
-            rsp = "你@我干嘛？"
+            rsp = "" #"你@我干嘛？"
         else:  # 接了 ChatGPT，智能回复
             q = re.sub(r"@.*?[\u2005|\s]", "", msg.content).replace(" ", "")
             rsp = self.chat.get_answer(q, (msg.roomid if msg.from_group() else msg.sender))
@@ -101,9 +75,6 @@ class Robot(Job):
             if msg.is_at(self.wxid):   # 被@
                 self.toAt(msg)
 
-            else:                # 其他消息
-                self.toChengyu(msg)
-
             return  # 处理完群聊信息，后面就不需要处理了
 
         # 非群聊信息，按消息类型进行处理
@@ -111,7 +82,8 @@ class Robot(Job):
             self.autoAcceptFriendRequest(msg)
 
         elif msg.type == 10000:  # 系统信息
-            self.sayHiToNewFriend(msg)
+            #self.sayHiToNewFriend(msg)
+            pass
 
         elif msg.type == 0x01:   # 文本消息
             # 让配置加载更灵活，自己可以更新配置。也可以利用定时任务更新。
@@ -171,30 +143,3 @@ class Robot(Job):
         while True:
             self.runPendingJobs()
             time.sleep(1)
-
-    def autoAcceptFriendRequest(self, msg: WxMsg) -> None:
-        try:
-            xml = ET.fromstring(msg.content)
-            v3 = xml.attrib["encryptusername"]
-            v4 = xml.attrib["ticket"]
-            scene = int(xml.attrib["scene"])
-            self.wcf.accept_new_friend(v3, v4, scene)
-
-        except Exception as e:
-            self.LOG.error(f"同意好友出错：{e}")
-
-    def sayHiToNewFriend(self, msg: WxMsg) -> None:
-        nickName = re.findall(r"你已添加了(.*)，现在可以开始聊天了。", msg.content)
-        if nickName:
-            # 添加了好友，更新好友列表
-            self.allContacts[msg.sender] = nickName[0]
-            self.sendTextMsg(f"Hi {nickName[0]}，我自动通过了你的好友请求。", msg.sender)
-
-    def newsReport(self) -> None:
-        receivers = self.config.NEWS
-        if not receivers:
-            return
-
-        news = News().get_important_news()
-        for r in receivers:
-            self.sendTextMsg(news, r)

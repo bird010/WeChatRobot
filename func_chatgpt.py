@@ -4,6 +4,7 @@
 from datetime import datetime
 
 import openai
+import json
 
 
 class ChatGPT():
@@ -69,7 +70,7 @@ class ChatGPT():
 
         # 只存储10条记录，超过滚动清除
         i = len(self.conversation_list[wxid])
-        if i > 10:
+        if i > 20:
             print("滚动清除微信记录：" + wxid)
             # 删除多余的记录，倒着删，且跳过第一个的系统消息
             del self.conversation_list[wxid][1]
@@ -81,7 +82,9 @@ if __name__ == "__main__":
     if not config:
         exit(0)
 
-    key = config.get("key")
+    with open("E:\code\ChatGPT\key.json") as f:
+        KEY = json.load(f)
+    key = KEY["My Test Key"]
     api = config.get("api")
     proxy = config.get("proxy")
     prompt = config.get("prompt")
